@@ -76,7 +76,7 @@ export const ingressIp = AppService.getIngressControllerIp();
 if (domainName) {
     const domain = new digitalocean.Domain("botpress-domain", {
         /**
-         * Ensure that you have registered and own the domain before adding it to DO.
+         * Ensure that you have registered the domain before adding it to DO.
          * DO doesn't support domain registrar services.
          * https://www.digitalocean.com/community/tutorials/how-to-point-to-digitalocean-nameservers-from-common-domain-registrars 
          */
