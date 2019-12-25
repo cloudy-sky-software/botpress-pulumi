@@ -1,11 +1,17 @@
 import * as pulumi from "@pulumi/pulumi";
+import * as digitalocean from "@pulumi/digitalocean";
 import * as kx from "@pulumi/kubernetesx";
 import * as k8s from "@pulumi/kubernetes";
 
+import * as fs from "fs";
+
 import { AppService, AppServiceArgs } from "./appService";
+import { IncomingResource } from "./dbClusterIncomingResource";
 
 export interface MainServerArgs extends AppServiceArgs {
     langServerServiceEndpoint: pulumi.Output<string>;
+    domainName?: string;
+    bpfsStorage: "disk" | "database";
 }
 
 /**
@@ -17,11 +23,16 @@ export class MainServer extends AppService {
     public static readonly SERVER_PORT = 3000;
 
     private serverArgs: MainServerArgs;
+    private dbCluster: digitalocean.DatabaseCluster | undefined;
+    private dbConnectionPool: digitalocean.DatabaseConnectionPool | undefined;
 
     constructor(args: MainServerArgs, opts: pulumi.ComponentResourceOptions) {
         super("main-server", args, opts);
         this.serverArgs = args;
 
+        if (this.serverArgs.bpfsStorage === "database") {
+            this.createDbCluster();
+        }
         this.createDeployment();
         this.createService();
         this.createIngressResources();
@@ -29,10 +40,49 @@ export class MainServer extends AppService {
         this.registerOutputs({});
     }
 
+    private createDbCluster() {
+        this.dbCluster = new digitalocean.DatabaseCluster("dbCluster", {
+            name: "bp-db-cluster",
+            version: "11",
+            tags: ["botpress"],
+            engine: "pg",
+            nodeCount: 2,
+            region: digitalocean.Regions.SFO2,
+            size: digitalocean.DatabaseSlugs.DB_2VPCU4GB,
+        }, { parent: this });
+
+
+        const db = new digitalocean.DatabaseDb("bpDb", {
+            name: "botpress",
+            clusterId: this.dbCluster.id,
+        }, { parent: this.dbCluster });
+
+        this.dbConnectionPool = new digitalocean.DatabaseConnectionPool("bpConnectionPool", {
+            clusterId: this.dbCluster.id,
+            mode: "transaction",
+            size: 10,
+            name: "bpConnectionPool",
+            dbName: db.name,
+            user: this.dbCluster.user,
+        }, { parent: this.dbConnectionPool });
+
+        const dbTrustedResource = new IncomingResource("db-trusted-resource", {
+            dbClusterId: this.dbCluster.id,
+            k8sClusterId: this.serverArgs.clusterId,
+        }, { parent: this, dependsOn: this.dbCluster });
+    }
+
     private createDeployment() {
         if (!this.pvc) {
             throw new Error("PersistentVolumeClaim is not initialized. Cannot create a deployment without it.");
         }
+
+        const configMap = new kx.ConfigMap("bp-server-config-map", {
+            metadata: this.getBaseMetadata(),
+            data: {
+                "db-cluster-ca-cert": fs.readFileSync("digitalocean-db-cluster-ca-certificate.crt").toString("utf8"),
+            },
+        }, { parent: this });
 
         const podName = "botpress-server";
         const botpressServerPodBuilder = new kx.PodBuilder({
@@ -48,9 +98,28 @@ export class MainServer extends AppService {
                     {
                         name: "BP_MODULE_NLU_LANGUAGESOURCES",
                         value: pulumi.interpolate`[{ "endpoint": "${this.serverArgs.langServerServiceEndpoint}" }]`,
-                    }
+                    },
+                    {
+                        name: "EXTERNAL_URL",
+                        value: this.serverArgs.domainName ? this.serverArgs.domainName : AppService.getIngressControllerIp(),
+                    },
+                    {
+                        name: "BPFS_STORAGE",
+                        value: this.serverArgs.bpfsStorage,
+                    },
+                    {
+                        name: "DATABASE_URL",
+                        value: this.dbConnectionPool ? this.dbConnectionPool.privateUri : "",
+                    },
+                    {
+                        name: "DATABASE_POOL",
+                        value: `{"min":3,"max":10}`,
+                    },
                 ],
-                volumeMounts: [this.pvc.mount("/botpress/data")],
+                volumeMounts: [
+                    this.pvc.mount("/botpress/data"),
+                    configMap.mount("/etc/ssl/certs/db-cluster-ca-cert.crt"),
+                ],
             }],
         });
         this.appDeployment = new kx.Deployment(podName, {

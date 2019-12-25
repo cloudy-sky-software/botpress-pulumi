@@ -59,16 +59,20 @@ const appsNamespace = new k8s.core.v1.Namespace("apps", {
 }, { provider });
 
 const langServer = new LangServer({
+    clusterId: cluster.id,
     namespace: appsNamespace.metadata.name,
     numReplicas: 1,
     storageSize: "25Gi",
 }, { provider, parent: cluster});
 
 const mainServer = new MainServer({
+    clusterId: cluster.id,
     namespace: appsNamespace.metadata.name,
     numReplicas: 1,
     storageSize: "1Gi",
     langServerServiceEndpoint: langServer.getServiceEndpoint(),
+    bpfsStorage: "database",
+    domainName,
 }, { provider, parent: cluster, dependsOn: langServer });
 
 export const ingressIp = AppService.getIngressControllerIp();

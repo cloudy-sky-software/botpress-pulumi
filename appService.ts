@@ -3,6 +3,7 @@ import * as kx from "@pulumi/kubernetesx";
 import * as k8s from "@pulumi/kubernetes";
 
 export interface AppServiceArgs {
+    clusterId: pulumi.Output<string>;
     namespace: pulumi.Output<string>;
     numReplicas: number;
     storageSize: "25Gi" | "1Gi";
