@@ -1,6 +1,6 @@
 /**
  * Deploy the Botpress services onto a K8S cluster.
- * This app uses Pulumi's KubernetesX package.
+ * This app also uses Pulumi's KubernetesX package.
  * 
  * https://botpress.io/docs/advanced/hosting#running-multiple-containers
  * https://github.com/pulumi/pulumi-kubernetesx
@@ -72,6 +72,7 @@ const mainServer = new MainServer({
     storageSize: "1Gi",
     langServerServiceEndpoint: langServer.getServiceEndpoint(),
     bpfsStorage: "database",
+    dbSize: digitalocean.DatabaseSlugs.DB_1VPCU2GB,
     domainName,
 }, { provider, parent: cluster, dependsOn: langServer });
 

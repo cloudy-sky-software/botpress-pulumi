@@ -2,16 +2,19 @@ import * as pulumi from "@pulumi/pulumi";
 import * as digitalocean from "@pulumi/digitalocean";
 import * as kx from "@pulumi/kubernetesx";
 import * as k8s from "@pulumi/kubernetes";
-
 import * as fs from "fs";
 
 import { AppService, AppServiceArgs } from "./appService";
-import { IncomingResource } from "./dbClusterIncomingResource";
 
 export interface MainServerArgs extends AppServiceArgs {
     langServerServiceEndpoint: pulumi.Output<string>;
     domainName?: string;
     bpfsStorage: "disk" | "database";
+    /**
+     * The size of the nodes in the database cluster.
+     * Required only if `bpfsStorage` is set to `database`.
+     */
+    dbSize?: digitalocean.DatabaseSlug;
 }
 
 /**
@@ -48,7 +51,7 @@ export class MainServer extends AppService {
             engine: "pg",
             nodeCount: 2,
             region: digitalocean.Regions.SFO2,
-            size: digitalocean.DatabaseSlugs.DB_2VPCU4GB,
+            size: this.serverArgs.dbSize || digitalocean.DatabaseSlugs.DB_1VPCU1GB,
         }, { parent: this });
 
 
@@ -66,10 +69,16 @@ export class MainServer extends AppService {
             user: this.dbCluster.user,
         }, { parent: this.dbConnectionPool });
 
-        const dbTrustedResource = new IncomingResource("db-trusted-resource", {
-            dbClusterId: this.dbCluster.id,
-            k8sClusterId: this.serverArgs.clusterId,
-        }, { parent: this, dependsOn: this.dbCluster });
+        // Add the DOKS as a trusted resource to the DB cluster.
+        const trustedResource = new digitalocean.DatabaseFirewall("dbTrustedResource", {
+            clusterId: this.dbCluster.id,
+            rules: [
+                {
+                    type: "k8s",
+                    value: this.serverArgs.clusterId,
+                }
+            ],
+        }, { parent: this.dbCluster });
     }
 
     private createDeployment() {
@@ -101,7 +110,8 @@ export class MainServer extends AppService {
                     },
                     {
                         name: "EXTERNAL_URL",
-                        value: this.serverArgs.domainName ? this.serverArgs.domainName : AppService.getIngressControllerIp(),
+                        value: this.serverArgs.domainName ?
+                            this.serverArgs.domainName : pulumi.interpolate `http://${AppService.getIngressControllerIp()}`,
                     },
                     {
                         name: "BPFS_STORAGE",
@@ -109,16 +119,32 @@ export class MainServer extends AppService {
                     },
                     {
                         name: "DATABASE_URL",
-                        value: this.dbConnectionPool ? this.dbConnectionPool.privateUri : "",
+                        /**
+                         * Append `&ssl=1` to the connection string. The driver used by Botpress uses
+                         * `pg-connection-string` npm package to parse the connection string.
+                         * It detects the presence of an `ssl` query-param in order to set
+                         * SSL mode to true.
+                         */
+                        value: this.dbConnectionPool ?
+                            pulumi.interpolate `${this.dbConnectionPool.privateUri}&ssl=1` : "",
                     },
                     {
                         name: "DATABASE_POOL",
                         value: `{"min":3,"max":10}`,
                     },
+                    {
+                        /**
+                         * The db driver used by Botpress looks for this env var
+                         * to use the right SSL mode.
+                         * https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/connection-parameters.js#L31
+                         */
+                        name: "PGSSLMODE",
+                        value: "require",
+                    },
                 ],
                 volumeMounts: [
                     this.pvc.mount("/botpress/data"),
-                    configMap.mount("/etc/ssl/certs/db-cluster-ca-cert.crt"),
+                    configMap.mount("/usr/local/share/ca-certificates/db-cluster-ca-cert.crt"),
                 ],
             }],
         });
