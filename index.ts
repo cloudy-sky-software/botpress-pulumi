@@ -71,8 +71,7 @@ const mainServer = new MainServer({
     numReplicas: 1,
     storageSize: "1Gi",
     langServerServiceEndpoint: langServer.getServiceEndpoint(),
-    bpfsStorage: "database",
-    dbSize: digitalocean.DatabaseSlugs.DB_1VPCU2GB,
+    bpfsStorage: "disk",
     domainName,
 }, { provider, parent: cluster, dependsOn: langServer });
 
