@@ -38,7 +38,7 @@ const nodePoolTag = "botpress";
 const cluster = new digitalocean.KubernetesCluster("botpressCluster", {
     name: "botpress-cluster",
     region: digitalocean.Regions.SFO2,
-    version: "1.16.2-do.1",
+    version: "1.16.2-do.3",
     nodePool: {
         name: "default-pool",
         size: digitalocean.DropletSlugs.DropletS1VCPU2GB,
