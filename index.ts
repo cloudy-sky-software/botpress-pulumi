@@ -38,7 +38,12 @@ const nodePoolTag = "botpress";
 const cluster = new digitalocean.KubernetesCluster("botpressCluster", {
     name: "botpress-cluster",
     region: digitalocean.Regions.SFO2,
-    version: "1.16.2-do.3",
+    // Choose the appropriate DO Kubernetes version.
+    // 1.16.x-do.3+ supports volume expansion, so be aware if you need
+    // to downgrade.
+    // See the changelog here:
+    // https://www.digitalocean.com/docs/kubernetes/changelog/
+    version: "1.18.8-do.0",
     nodePool: {
         name: "default-pool",
         size: digitalocean.DropletSlugs.DropletS1VCPU2GB,
@@ -62,7 +67,7 @@ const langServer = new LangServer({
     clusterId: cluster.id,
     namespace: appsNamespace.metadata.name,
     numReplicas: 1,
-    storageSize: "25Gi",
+    storageSize: "5Gi",
 }, { provider, parent: cluster});
 
 const mainServer = new MainServer({

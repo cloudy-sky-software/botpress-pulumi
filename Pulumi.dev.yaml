@@ -1,0 +1,4 @@
+config:
+  botpress:botpressServerVersion: v12_4_2
+  digitalocean:token:
+    secure: AAABAK1qh+E1WvuEKsKcyxLqkbbR01+kZwBCECWHSdEshYilJlNAvSDfPapEZXbs1yKjPbzD3JOuR3YjOgUCW330Rp43redaaNZDIc0qkrIKiD2b6lwP1+5xu2TNdnDd

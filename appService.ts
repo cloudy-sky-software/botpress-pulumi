@@ -6,7 +6,12 @@ export interface AppServiceArgs {
     clusterId: pulumi.Output<string>;
     namespace: pulumi.Output<string>;
     numReplicas: number;
-    storageSize: "25Gi" | "1Gi";
+    /**
+     * The storage size of the PVC.
+     * See limitations:
+     * https://www.digitalocean.com/docs/kubernetes/resources/volume-features/
+     */
+    storageSize: string;
 }
 
 /**
