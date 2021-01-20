@@ -193,8 +193,14 @@ export class MainServer extends AppService {
             return;
         }
 
+        const ingressServiceBackend: k8s.types.input.networking.v1.IngressServiceBackend = {
+            name: this.getService().metadata.name,
+            port: {
+                number: MainServer.SERVER_PORT
+            },
+        };
         // Create an Ingress resource pointing to the botpress server service.
-        const assetsIngress = new k8s.networking.v1beta1.Ingress("assets-ingress",
+        const assetsIngress = new k8s.networking.v1.Ingress("assets-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -221,8 +227,7 @@ export class MainServer extends AppService {
                                     {
                                         path: "/.+/assets/.*",
                                         backend: {
-                                            serviceName: this.getService().metadata.name,
-                                            servicePort: MainServer.SERVER_PORT,
+                                            service: ingressServiceBackend
                                         },
                                     },
                                 ],
@@ -232,7 +237,7 @@ export class MainServer extends AppService {
                 }
             }, { parent: this }
         );
-        const socketIoIngress = new k8s.networking.v1beta1.Ingress("socketio-ingress",
+        const socketIoIngress = new k8s.networking.v1.Ingress("socketio-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -253,8 +258,7 @@ export class MainServer extends AppService {
                                     {
                                         path: "/socket.io/",
                                         backend: {
-                                            serviceName: this.getService().metadata.name,
-                                            servicePort: MainServer.SERVER_PORT,
+                                            service: ingressServiceBackend
                                         },
                                     },
                                 ],
@@ -264,7 +268,7 @@ export class MainServer extends AppService {
                 }
             }, { parent: this }
         );
-        const defaultIngress = new k8s.networking.v1beta1.Ingress("root-ingress",
+        const defaultIngress = new k8s.networking.v1.Ingress("root-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -281,9 +285,8 @@ export class MainServer extends AppService {
                                     {
                                         path: "/",
                                         backend: {
-                                            serviceName: this.getService().metadata.name,
-                                            servicePort: MainServer.SERVER_PORT,
-                                        }
+                                            service: ingressServiceBackend
+                                        },
                                     },
                                 ],
                             },

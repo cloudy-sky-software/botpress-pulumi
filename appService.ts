@@ -31,7 +31,7 @@ export class AppService extends pulumi.ComponentResource {
     private name: string;
     private appServiceArgs: AppServiceArgs;
 
-    private static ingressControllerChart: k8s.helm.v2.Chart | undefined;
+    private static ingressControllerChart: k8s.helm.v3.Chart | undefined;
     private static appSvcsNamespace: k8s.core.v1.Namespace | undefined;
 
     protected botpressServerVersion: string;
@@ -74,7 +74,7 @@ export class AppService extends pulumi.ComponentResource {
 
         const lbIp = AppService.ingressControllerChart
             .getResource("v1/Service", "app-svcs/nginx-nginx-ingress-controller")
-            .apply(v => v.status.loadBalancer.ingress[0].ip);
+            .apply(v => v ? v.status.loadBalancer.ingress[0].ip : pulumi.output("unknown-ip"));
         return lbIp;
     }
 
@@ -103,12 +103,13 @@ export class AppService extends pulumi.ComponentResource {
                 name: "app-svcs",
             },
         }, { parent: this });
-        AppService.ingressControllerChart = new k8s.helm.v2.Chart("nginx", {
+        AppService.ingressControllerChart = new k8s.helm.v3.Chart("nginx", {
             namespace: AppService.appSvcsNamespace.metadata.name,
-            chart: "nginx-ingress",
-            version: "1.26.2",
+            // https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
+            chart: "ingress-nginx",
+            version: "3.20.1",
             fetchOpts: {
-                repo: "https://kubernetes-charts.storage.googleapis.com/"
+                repo: "https://kubernetes.github.io/ingress-nginx"
             },
             values: {
                 controller: {
