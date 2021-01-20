@@ -4,7 +4,7 @@ import * as k8s from "@pulumi/kubernetes";
 
 import { AppService, AppServiceArgs } from "./appService";
 
-export interface LangServerArgs extends AppServiceArgs {}
+export interface LangServerArgs extends AppServiceArgs { }
 
 /**
  * The `LangServer` is an app service that represents the Botpress language server
@@ -41,11 +41,11 @@ export class LangServer extends AppService {
                 },
                 command: ["/bin/bash"],
                 args: ["-c", "./bp lang --langDir /botpress/data/embeddings"],
-                volumeMounts: [ this.pvc.mount("/botpress/data") ],
+                volumeMounts: [this.pvc.mount("/botpress/data")],
             }],
         });
         this.appDeployment = new kx.Deployment("botpress-lang-server", {
-            spec: bpLangServerPodBuilder.asDeploymentSpec({replicas: this.langServerArgs.numReplicas}),
+            spec: bpLangServerPodBuilder.asDeploymentSpec({ replicas: this.langServerArgs.numReplicas }),
             metadata: {
                 ...this.getBaseMetadata(),
                 // Without the `name`, the service fails to find the pod to direct traffic to.
@@ -82,6 +82,6 @@ export class LangServer extends AppService {
             throw new Error("Service is not yet initialized.");
         }
 
-        return pulumi.interpolate `http://${this.service.metadata.name}.${this.langServerArgs.namespace}:${LangServer.SERVER_PORT}`;
+        return pulumi.interpolate`http://${this.service.metadata.name}.${this.langServerArgs.namespace}:${LangServer.SERVER_PORT}`;
     }
 }

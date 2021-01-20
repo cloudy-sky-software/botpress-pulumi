@@ -111,7 +111,7 @@ export class MainServer extends AppService {
                     {
                         name: "EXTERNAL_URL",
                         value: this.serverArgs.domainName ?
-                            this.serverArgs.domainName : pulumi.interpolate `http://${AppService.getIngressControllerIp()}`,
+                            this.serverArgs.domainName : pulumi.interpolate`http://${AppService.getIngressControllerIp()}`,
                     },
                     {
                         name: "BPFS_STORAGE",
@@ -126,7 +126,7 @@ export class MainServer extends AppService {
                          * SSL mode to true.
                          */
                         value: this.dbConnectionPool ?
-                            pulumi.interpolate `${this.dbConnectionPool.privateUri}&ssl=1` : "",
+                            pulumi.interpolate`${this.dbConnectionPool.privateUri}&ssl=1` : "",
                     },
                     {
                         name: "DATABASE_POOL",

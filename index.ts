@@ -43,14 +43,14 @@ const cluster = new digitalocean.KubernetesCluster("botpressCluster", {
     // to downgrade.
     // See the changelog here:
     // https://www.digitalocean.com/docs/kubernetes/changelog/
-    version: "1.18.8-do.0",
+    version: "1.19.3-do.3",
     nodePool: {
         name: "default-pool",
         size: digitalocean.DropletSlugs.DropletS1VCPU2GB,
         nodeCount: 2,
-        tags: [ nodePoolTag ]
+        tags: [nodePoolTag]
     }
-}, { customTimeouts: { create: "1h" }});
+}, { customTimeouts: { create: "1h" } });
 
 const provider = new k8s.Provider("doK8s", {
     kubeconfig: cluster.kubeConfigs[0].rawConfig,
@@ -68,7 +68,7 @@ const langServer = new LangServer({
     namespace: appsNamespace.metadata.name,
     numReplicas: 1,
     storageSize: "5Gi",
-}, { provider, parent: cluster});
+}, { provider, parent: cluster });
 
 const mainServer = new MainServer({
     clusterId: cluster.id,
