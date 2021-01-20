@@ -46,7 +46,7 @@ export class MainServer extends AppService {
     private createDbCluster() {
         this.dbCluster = new digitalocean.DatabaseCluster("dbCluster", {
             name: "bp-db-cluster",
-            version: "11",
+            version: "12",
             tags: ["botpress"],
             engine: "pg",
             nodeCount: 2,
