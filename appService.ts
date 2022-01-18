@@ -34,7 +34,10 @@ export class AppService extends pulumi.ComponentResource {
     private ingressControllerVersion: string;
 
     private static ingressControllerChart: k8s.helm.v3.Chart | undefined;
-    private static appSvcsNamespace: k8s.core.v1.Namespace | undefined;
+    public static appSvcsNamespace: k8s.core.v1.Namespace | undefined;
+    public static defaultIngressClass:
+        | k8s.networking.v1.IngressClass
+        | undefined;
 
     protected botpressServerVersion: string;
     protected pvc: kx.PersistentVolumeClaim | undefined;
@@ -129,6 +132,32 @@ export class AppService extends pulumi.ComponentResource {
             },
             { parent: this }
         );
+
+        // The ingress class links all ingress objects to a particular ingress controller.
+        // It also serves as a way to set default parmaters on ingress objects.
+        // However, the nginx ingress controller does not support any parameters at this time.
+        AppService.defaultIngressClass = new k8s.networking.v1.IngressClass(
+            "defaultIngressClass",
+            {
+                metadata: {
+                    name: "defaultNginxIngressClass",
+                    namespace: AppService.appSvcsNamespace?.metadata.name,
+                    annotations: {
+                        // We'll only have a single nginx controller so we'll mark
+                        // this as the default ingress class for all ingress objects.
+                        "ingressclass.kubernetes.io/is-default-class": "true",
+                    },
+                },
+                spec: {
+                    controller: "k8s.io/nginx-ingress",
+                    // nginx-ingress does not support any parameters right now.
+                    // https://github.com/kubernetes/ingress-nginx/issues/5593#issuecomment-721479598
+                    // As an example of what `parameters` is see the AWS ELB doc.
+                    // https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.3/guide/ingress/ingress_class/#ingressclassparams
+                },
+            }
+        );
+
         AppService.ingressControllerChart = new k8s.helm.v3.Chart(
             "nginx",
             {

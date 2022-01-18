@@ -264,6 +264,7 @@ export class MainServer extends AppService {
                     number: MainServer.SERVER_PORT,
                 },
             };
+
         // Create an Ingress resource pointing to the botpress server service.
         const assetsIngress = new k8s.networking.v1.Ingress(
             "assets-ingress",
@@ -286,6 +287,8 @@ export class MainServer extends AppService {
                     },
                 },
                 spec: {
+                    ingressClassName:
+                        AppService.defaultIngressClass?.metadata.name,
                     rules: [
                         {
                             http: {
@@ -320,6 +323,8 @@ export class MainServer extends AppService {
                     },
                 },
                 spec: {
+                    ingressClassName:
+                        AppService.defaultIngressClass?.metadata.name,
                     rules: [
                         {
                             http: {
@@ -350,6 +355,8 @@ export class MainServer extends AppService {
                     },
                 },
                 spec: {
+                    ingressClassName:
+                        AppService.defaultIngressClass?.metadata.name,
                     rules: [
                         {
                             http: {
