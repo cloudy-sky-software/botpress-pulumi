@@ -16,7 +16,9 @@ import { AppService } from "./appService";
 
 const config = new pulumi.Config();
 // The DigitalOcean Managed Kubernetes Service version.
-const doksVersion = config.get("doksVersion");
+// See the changelog here:
+// https://www.digitalocean.com/docs/kubernetes/changelog/
+const doksVersion = config.get("doksVersion") || "1.21.5-do.0";
 const domainName = config.get("customDomain");
 
 const nodePoolTag = "botpress";
@@ -42,12 +44,7 @@ const cluster = new digitalocean.KubernetesCluster(
     {
         name: "botpress-cluster",
         region: digitalocean.Region.SFO2,
-        // Choose the appropriate DO Kubernetes version.
-        // 1.16.x-do.3+ supports volume expansion, so be aware if you need
-        // to downgrade.
-        // See the changelog here:
-        // https://www.digitalocean.com/docs/kubernetes/changelog/
-        version: "1.21.5-do.0",
+        version: doksVersion,
         nodePool: {
             name: "default-pool",
             size: digitalocean.DropletSlug.DropletS1VCPU2GB,

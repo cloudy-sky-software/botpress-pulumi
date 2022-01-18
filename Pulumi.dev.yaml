@@ -1,4 +1,5 @@
 config:
-  botpress:botpressServerVersion: v12_16_2
+  botpress:botpressServerVersion: v12_26_8
+  botpress:doksVersion: 1.21.5-do.0
   digitalocean:token:
-    secure: AAABAKUzj+Ru0yBcJbgM3K60Qs0I8HcxNtYAJ8m6dRublDP/36bAmY9JcHwfbHE8hELPHEI/+EHA5hSGdfB+CDOHttPxvvce7NHwIzat6946OfOqJmNvydJ0oWDBvDJq
+    secure: AAABADPDSXOezi1VXOOA7xesdVKkgsC/k+eeVTYeAsr0dQR04Ybv8WhKEXJRY/wvWDrimL8N7W1d5jmz5DPfNH30JCM2Z7uF6sWyHkZlDznNvDWOx+l7n3Ggdk8x/lFy
