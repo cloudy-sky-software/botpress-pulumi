@@ -39,7 +39,11 @@ export class AppService extends pulumi.ComponentResource {
     protected appDeployment: kx.Deployment | undefined;
     protected service: k8s.core.v1.Service | undefined;
 
-    constructor(name: string, args: AppServiceArgs, opts?: pulumi.ComponentResourceOptions) {
+    constructor(
+        name: string,
+        args: AppServiceArgs,
+        opts?: pulumi.ComponentResourceOptions
+    ) {
         super("app-service", name, undefined, opts);
         const config = new pulumi.Config();
         this.botpressServerVersion = config.require("botpressServerVersion");
@@ -73,8 +77,15 @@ export class AppService extends pulumi.ComponentResource {
         }
 
         const lbIp = AppService.ingressControllerChart
-            .getResource("v1/Service", "app-svcs/nginx-nginx-ingress-controller")
-            .apply(v => v ? v.status.loadBalancer.ingress[0].ip : pulumi.output("unknown-ip"));
+            .getResource(
+                "v1/Service",
+                "app-svcs/nginx-nginx-ingress-controller"
+            )
+            .apply((v) =>
+                v
+                    ? v.status.loadBalancer.ingress[0].ip
+                    : pulumi.output("unknown-ip")
+            );
         return lbIp;
     }
 
@@ -85,40 +96,52 @@ export class AppService extends pulumi.ComponentResource {
     }
 
     private createStorage() {
-        this.pvc = new kx.PersistentVolumeClaim(`${this.name}-pvc-rw`, {
-            metadata: this.getBaseMetadata(),
-            spec: {
-                accessModes: ["ReadWriteOnce"],
-                resources: { requests: { storage: this.appServiceArgs.storageSize } }
-            }
-        }, { parent: this });
+        this.pvc = new kx.PersistentVolumeClaim(
+            `${this.name}-pvc-rw`,
+            {
+                metadata: this.getBaseMetadata(),
+                spec: {
+                    accessModes: ["ReadWriteOnce"],
+                    resources: {
+                        requests: { storage: this.appServiceArgs.storageSize },
+                    },
+                },
+            },
+            { parent: this }
+        );
     }
 
     /**
      * Deploy the NGINX ingress controller using the Helm chart.
      */
     private createIngressController() {
-        AppService.appSvcsNamespace = new k8s.core.v1.Namespace("app-svcs", {
-            metadata: {
-                name: "app-svcs",
+        AppService.appSvcsNamespace = new k8s.core.v1.Namespace(
+            "app-svcs",
+            {
+                metadata: {
+                    name: "app-svcs",
+                },
             },
-        }, { parent: this });
-        AppService.ingressControllerChart = new k8s.helm.v3.Chart("nginx", {
-            namespace: AppService.appSvcsNamespace.metadata.name,
-            // https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
-            chart: "ingress-nginx",
-            version: "3.20.1",
-            fetchOpts: {
-                repo: "https://kubernetes.github.io/ingress-nginx"
-            },
-            values: {
-                controller: {
-                    publishService: { enabled: true },
-                    config: {
-                        "proxy-body-size": "10M",
-                        "access-log-path": "logs/access.log",
-                        "error-log-path": "logs/error.log",
-                        "http-snippet": `
+            { parent: this }
+        );
+        AppService.ingressControllerChart = new k8s.helm.v3.Chart(
+            "nginx",
+            {
+                namespace: AppService.appSvcsNamespace.metadata.name,
+                // https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
+                chart: "ingress-nginx",
+                version: "3.20.1",
+                fetchOpts: {
+                    repo: "https://kubernetes.github.io/ingress-nginx",
+                },
+                values: {
+                    controller: {
+                        publishService: { enabled: true },
+                        config: {
+                            "proxy-body-size": "10M",
+                            "access-log-path": "logs/access.log",
+                            "error-log-path": "logs/error.log",
+                            "http-snippet": `
                             # Prevent displaying Botpress in an iframe (clickjacking protection)
                             add_header X-Frame-Options SAMEORIGIN;
                         
@@ -130,18 +153,23 @@ export class AppService extends pulumi.ComponentResource {
 
                             # Configure the cache for static assets
                             proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=my_cache:10m max_size=10g inactive=60m use_temp_path=off;
-                        `
-                    }
-                }
+                        `,
+                        },
+                    },
+                },
+                transformations: [
+                    (obj: any) => {
+                        // Do transformations on the YAML to set the namespace
+                        if (obj.metadata) {
+                            obj.metadata.namespace =
+                                AppService.appSvcsNamespace!.metadata.name.apply(
+                                    (n) => n
+                                );
+                        }
+                    },
+                ],
             },
-            transformations: [
-                (obj: any) => {
-                    // Do transformations on the YAML to set the namespace
-                    if (obj.metadata) {
-                        obj.metadata.namespace = AppService.appSvcsNamespace!.metadata.name.apply(n => n);
-                    }
-                }
-            ],
-        }, { parent: this });
+            { parent: this }
+        );
     }
 }

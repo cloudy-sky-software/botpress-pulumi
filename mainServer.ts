@@ -44,121 +44,174 @@ export class MainServer extends AppService {
     }
 
     private createDbCluster() {
-        this.dbCluster = new digitalocean.DatabaseCluster("dbCluster", {
-            name: "bp-db-cluster",
-            version: "12",
-            tags: ["botpress"],
-            engine: "pg",
-            nodeCount: 2,
-            region: digitalocean.Regions.SFO2,
-            size: this.serverArgs.dbSize || digitalocean.DatabaseSlugs.DB_1VPCU1GB,
-        }, { parent: this });
+        this.dbCluster = new digitalocean.DatabaseCluster(
+            "dbCluster",
+            {
+                name: "bp-db-cluster",
+                version: "12",
+                tags: ["botpress"],
+                engine: "pg",
+                nodeCount: 2,
+                region: digitalocean.Region.SFO2,
+                size:
+                    this.serverArgs.dbSize ||
+                    digitalocean.DatabaseSlug.DB_1VPCU1GB,
+            },
+            { parent: this }
+        );
 
+        const db = new digitalocean.DatabaseDb(
+            "bpDb",
+            {
+                name: "botpress",
+                clusterId: this.dbCluster.id,
+            },
+            { parent: this.dbCluster }
+        );
 
-        const db = new digitalocean.DatabaseDb("bpDb", {
-            name: "botpress",
-            clusterId: this.dbCluster.id,
-        }, { parent: this.dbCluster });
-
-        this.dbConnectionPool = new digitalocean.DatabaseConnectionPool("bpConnectionPool", {
-            clusterId: this.dbCluster.id,
-            mode: "transaction",
-            size: 10,
-            name: "bpConnectionPool",
-            dbName: db.name,
-            user: this.dbCluster.user,
-        }, { parent: this.dbConnectionPool });
+        this.dbConnectionPool = new digitalocean.DatabaseConnectionPool(
+            "bpConnectionPool",
+            {
+                clusterId: this.dbCluster.id,
+                mode: "transaction",
+                size: 10,
+                name: "bpConnectionPool",
+                dbName: db.name,
+                user: this.dbCluster.user,
+            },
+            { parent: this.dbConnectionPool }
+        );
 
         // Add the DOKS as a trusted resource to the DB cluster.
-        const trustedResource = new digitalocean.DatabaseFirewall("dbTrustedResource", {
-            clusterId: this.dbCluster.id,
-            rules: [
-                {
-                    type: "k8s",
-                    value: this.serverArgs.clusterId,
-                }
-            ],
-        }, { parent: this.dbCluster });
+        const trustedResource = new digitalocean.DatabaseFirewall(
+            "dbTrustedResource",
+            {
+                clusterId: this.dbCluster.id,
+                rules: [
+                    {
+                        type: "k8s",
+                        value: this.serverArgs.clusterId,
+                    },
+                ],
+            },
+            { parent: this.dbCluster }
+        );
     }
 
     private createDeployment() {
         if (!this.pvc) {
-            throw new Error("PersistentVolumeClaim is not initialized. Cannot create a deployment without it.");
+            throw new Error(
+                "PersistentVolumeClaim is not initialized. Cannot create a deployment without it."
+            );
         }
 
-        const configMap = new kx.ConfigMap("bp-server-config-map", {
-            metadata: this.getBaseMetadata(),
-            data: {
-                "db-cluster-ca-cert": fs.readFileSync("digitalocean-db-cluster-ca-certificate.crt").toString("utf8"),
-            },
-        }, { parent: this });
+        const volumeMounts = [this.pvc.mount("/botpress/data")];
+        if (this.serverArgs.bpfsStorage === "database") {
+            if (!this.dbCluster) {
+                throw new Error(
+                    "Botpress storage type database requires a database cluster to be created but it doesn't seem to have been created!"
+                );
+            }
+
+            const configMap = new kx.ConfigMap(
+                "bp-server-config-map",
+                {
+                    metadata: this.getBaseMetadata(),
+                    data: {
+                        "db-cluster-ca-cert": this.dbCluster.id.apply((id) =>
+                            pulumi
+                                .output(
+                                    digitalocean.getDatabaseCa({
+                                        clusterId: id,
+                                    })
+                                )
+                                .apply((r) => r.certificate)
+                        ),
+                    },
+                },
+                { parent: this }
+            );
+            volumeMounts.push(
+                // Add the CA cert config map as a volume mount for the Main Server's deployment.
+                configMap.mount(
+                    "/usr/local/share/ca-certificates/db-cluster-ca-cert.crt"
+                )
+            );
+        }
 
         const podName = "botpress-server";
         const botpressServerPodBuilder = new kx.PodBuilder({
-            containers: [{
-                name: podName,
-                image: `botpress/server:${this.botpressServerVersion}`,
-                ports: {
-                    http: MainServer.SERVER_PORT,
+            containers: [
+                {
+                    name: podName,
+                    image: `botpress/server:${this.botpressServerVersion}`,
+                    ports: {
+                        http: MainServer.SERVER_PORT,
+                    },
+                    command: ["/bin/bash"],
+                    args: ["-c", "./duckling & ./bp"],
+                    env: [
+                        {
+                            name: "BP_MODULE_NLU_LANGUAGESOURCES",
+                            value: pulumi.interpolate`[{ "endpoint": "${this.serverArgs.langServerServiceEndpoint}" }]`,
+                        },
+                        {
+                            name: "EXTERNAL_URL",
+                            value: this.serverArgs.domainName
+                                ? this.serverArgs.domainName
+                                : pulumi.interpolate`http://${AppService.getIngressControllerIp()}`,
+                        },
+                        {
+                            name: "BPFS_STORAGE",
+                            value: this.serverArgs.bpfsStorage,
+                        },
+                        {
+                            name: "DATABASE_URL",
+                            /**
+                             * Append `&ssl=1` to the connection string. The driver used by Botpress uses
+                             * `pg-connection-string` npm package to parse the connection string.
+                             * It detects the presence of an `ssl` query-param in order to set
+                             * SSL mode to true.
+                             */
+                            value: this.dbConnectionPool
+                                ? pulumi.interpolate`${this.dbConnectionPool.privateUri}&ssl=1`
+                                : "",
+                        },
+                        {
+                            name: "DATABASE_POOL",
+                            value: `{"min":3,"max":10}`,
+                        },
+                        {
+                            /**
+                             * The db driver used by Botpress looks for this env var
+                             * to use the right SSL mode.
+                             * https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/connection-parameters.js#L31
+                             */
+                            name: "PGSSLMODE",
+                            value: "require",
+                        },
+                    ],
+                    volumeMounts,
                 },
-                command: ["/bin/bash"],
-                args: ["-c", "./duckling & ./bp"],
-                env: [
-                    {
-                        name: "BP_MODULE_NLU_LANGUAGESOURCES",
-                        value: pulumi.interpolate`[{ "endpoint": "${this.serverArgs.langServerServiceEndpoint}" }]`,
-                    },
-                    {
-                        name: "EXTERNAL_URL",
-                        value: this.serverArgs.domainName ?
-                            this.serverArgs.domainName : pulumi.interpolate`http://${AppService.getIngressControllerIp()}`,
-                    },
-                    {
-                        name: "BPFS_STORAGE",
-                        value: this.serverArgs.bpfsStorage,
-                    },
-                    {
-                        name: "DATABASE_URL",
-                        /**
-                         * Append `&ssl=1` to the connection string. The driver used by Botpress uses
-                         * `pg-connection-string` npm package to parse the connection string.
-                         * It detects the presence of an `ssl` query-param in order to set
-                         * SSL mode to true.
-                         */
-                        value: this.dbConnectionPool ?
-                            pulumi.interpolate`${this.dbConnectionPool.privateUri}&ssl=1` : "",
-                    },
-                    {
-                        name: "DATABASE_POOL",
-                        value: `{"min":3,"max":10}`,
-                    },
-                    {
-                        /**
-                         * The db driver used by Botpress looks for this env var
-                         * to use the right SSL mode.
-                         * https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/connection-parameters.js#L31
-                         */
-                        name: "PGSSLMODE",
-                        value: "require",
-                    },
-                ],
-                volumeMounts: [
-                    this.pvc.mount("/botpress/data"),
-                    configMap.mount("/usr/local/share/ca-certificates/db-cluster-ca-cert.crt"),
-                ],
-            }],
+            ],
         });
-        this.appDeployment = new kx.Deployment(podName, {
-            spec: botpressServerPodBuilder.asDeploymentSpec({ replicas: this.serverArgs.numReplicas }),
-            metadata: {
-                ...this.getBaseMetadata(),
-                // Without the `name`, the service fails to find the pod to direct traffic to.
-                name: podName,
-                labels: {
-                    "app": podName,
+        this.appDeployment = new kx.Deployment(
+            podName,
+            {
+                spec: botpressServerPodBuilder.asDeploymentSpec({
+                    replicas: this.serverArgs.numReplicas,
+                }),
+                metadata: {
+                    ...this.getBaseMetadata(),
+                    // Without the `name`, the service fails to find the pod to direct traffic to.
+                    name: podName,
+                    labels: {
+                        app: podName,
+                    },
                 },
             },
-        }, { parent: this });
+            { parent: this }
+        );
     }
 
     private createService() {
@@ -166,19 +219,25 @@ export class MainServer extends AppService {
             throw new Error("Cannot create a service without a deployment.");
         }
 
-        this.service = new k8s.core.v1.Service("botpress-server-service", {
-            metadata: this.getBaseMetadata(),
-            spec: {
-                selector: {
-                    "app": this.appDeployment.metadata.name,
+        this.service = new k8s.core.v1.Service(
+            "botpress-server-service",
+            {
+                metadata: this.getBaseMetadata(),
+                spec: {
+                    selector: {
+                        app: this.appDeployment.metadata.name,
+                    },
+                    ports: [
+                        {
+                            name: "http",
+                            port: MainServer.SERVER_PORT,
+                            targetPort: MainServer.SERVER_PORT,
+                        },
+                    ],
                 },
-                ports: [{
-                    name: "http",
-                    port: MainServer.SERVER_PORT,
-                    targetPort: MainServer.SERVER_PORT,
-                }],
-            }
-        }, { parent: this });
+            },
+            { parent: this }
+        );
     }
 
     /**
@@ -189,18 +248,25 @@ export class MainServer extends AppService {
             this.getDeployment();
             this.getService();
         } catch (err) {
-            pulumi.log.info("Some resources are not yet ready.", this, undefined, true);
+            pulumi.log.info(
+                "Some resources are not yet ready.",
+                this,
+                undefined,
+                true
+            );
             return;
         }
 
-        const ingressServiceBackend: k8s.types.input.networking.v1.IngressServiceBackend = {
-            name: this.getService().metadata.name,
-            port: {
-                number: MainServer.SERVER_PORT
-            },
-        };
+        const ingressServiceBackend: k8s.types.input.networking.v1.IngressServiceBackend =
+            {
+                name: this.getService().metadata.name,
+                port: {
+                    number: MainServer.SERVER_PORT,
+                },
+            };
         // Create an Ingress resource pointing to the botpress server service.
-        const assetsIngress = new k8s.networking.v1.Ingress("assets-ingress",
+        const assetsIngress = new k8s.networking.v1.Ingress(
+            "assets-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -216,7 +282,7 @@ export class MainServer extends AppService {
                             proxy_cache_valid any 30m;
                             proxy_set_header Cache-Control max-age=30;
                             add_header Cache-Control max-age=30;
-                        `
+                        `,
                     },
                 },
                 spec: {
@@ -226,18 +292,21 @@ export class MainServer extends AppService {
                                 paths: [
                                     {
                                         path: "/.+/assets/.*",
+                                        pathType: "Prefix",
                                         backend: {
-                                            service: ingressServiceBackend
+                                            service: ingressServiceBackend,
                                         },
                                     },
                                 ],
                             },
-                        }
-                    ]
-                }
-            }, { parent: this }
+                        },
+                    ],
+                },
+            },
+            { parent: this }
         );
-        const socketIoIngress = new k8s.networking.v1.Ingress("socketio-ingress",
+        const socketIoIngress = new k8s.networking.v1.Ingress(
+            "socketio-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -247,7 +316,7 @@ export class MainServer extends AppService {
                         "nginx.ingress.kubernetes.io/configuration-snippet": `
                             proxy_set_header Upgrade $http_upgrade;
                             proxy_set_header Connection "Upgrade";
-                        `
+                        `,
                     },
                 },
                 spec: {
@@ -257,18 +326,21 @@ export class MainServer extends AppService {
                                 paths: [
                                     {
                                         path: "/socket.io/",
+                                        pathType: "Prefix",
                                         backend: {
-                                            service: ingressServiceBackend
+                                            service: ingressServiceBackend,
                                         },
                                     },
                                 ],
                             },
-                        }
-                    ]
-                }
-            }, { parent: this }
+                        },
+                    ],
+                },
+            },
+            { parent: this }
         );
-        const defaultIngress = new k8s.networking.v1.Ingress("root-ingress",
+        const defaultIngress = new k8s.networking.v1.Ingress(
+            "root-ingress",
             {
                 metadata: {
                     labels: this.getDeployment().metadata.labels,
@@ -284,16 +356,18 @@ export class MainServer extends AppService {
                                 paths: [
                                     {
                                         path: "/",
+                                        pathType: "Exact",
                                         backend: {
-                                            service: ingressServiceBackend
+                                            service: ingressServiceBackend,
                                         },
                                     },
                                 ],
                             },
-                        }
-                    ]
-                }
-            }, { parent: this }
+                        },
+                    ],
+                },
+            },
+            { parent: this }
         );
     }
 }
