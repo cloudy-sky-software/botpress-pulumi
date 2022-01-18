@@ -1,5 +1,6 @@
 config:
   botpress:botpressServerVersion: v12_26_8
   botpress:doksVersion: 1.21.5-do.0
+  botpress:ingressControllerVersion: 4.0.13
   digitalocean:token:
     secure: AAABADPDSXOezi1VXOOA7xesdVKkgsC/k+eeVTYeAsr0dQR04Ybv8WhKEXJRY/wvWDrimL8N7W1d5jmz5DPfNH30JCM2Z7uF6sWyHkZlDznNvDWOx+l7n3Ggdk8x/lFy

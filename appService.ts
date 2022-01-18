@@ -30,6 +30,8 @@ export interface AppServiceArgs {
 export class AppService extends pulumi.ComponentResource {
     private name: string;
     private appServiceArgs: AppServiceArgs;
+    // The NGINX ingress controller version.
+    private ingressControllerVersion: string;
 
     private static ingressControllerChart: k8s.helm.v3.Chart | undefined;
     private static appSvcsNamespace: k8s.core.v1.Namespace | undefined;
@@ -46,6 +48,9 @@ export class AppService extends pulumi.ComponentResource {
     ) {
         super("app-service", name, undefined, opts);
         const config = new pulumi.Config();
+        this.ingressControllerVersion = config.require(
+            "ingressControllerVersion"
+        );
         this.botpressServerVersion = config.require("botpressServerVersion");
         this.name = name;
         this.appServiceArgs = args;
@@ -130,7 +135,7 @@ export class AppService extends pulumi.ComponentResource {
                 namespace: AppService.appSvcsNamespace.metadata.name,
                 // https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
                 chart: "ingress-nginx",
-                version: "3.20.1",
+                version: this.ingressControllerVersion,
                 fetchOpts: {
                     repo: "https://kubernetes.github.io/ingress-nginx",
                 },
