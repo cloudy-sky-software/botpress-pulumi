@@ -8,6 +8,6 @@
         "@pulumi/digitalocean": "^4.10.0",
         "@pulumi/kubernetes": "^3.14.0",
         "@pulumi/kubernetesx": "^0.1.6",
-        "@pulumi/pulumi": "^3.22.1"
+        "@pulumi/pulumi": "^3.74.0"
     }
 }
